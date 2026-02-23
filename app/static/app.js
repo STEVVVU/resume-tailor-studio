@@ -98,6 +98,18 @@ function populateModelSelect(provider, selectedModel) {
   }
 }
 
+async function refreshModelsForProvider(provider, selectedModel = "") {
+  try {
+    const payload = await api(`/api/models?provider=${encodeURIComponent(provider)}`, { method: "GET" });
+    if (payload && Array.isArray(payload.models) && payload.models.length > 0) {
+      MODEL_OPTIONS[provider] = payload.models;
+    }
+  } catch (_err) {
+    // Keep fallback list when discovery fails or no provider key is available.
+  }
+  populateModelSelect(provider, selectedModel);
+}
+
 function parseWorkflowStepsFromText(content) {
   const match = content.match(/Workflow \(when user provides JD \+ LaTeX\)([\s\S]*)$/m);
   if (!match) {
@@ -252,7 +264,7 @@ async function loadState() {
   const provider = state.llm_provider || "openai";
   document.getElementById("providerSelect").value = provider;
   const selectedModel = provider === "gemini" ? (state.llm_gemini_model || "gemini-2.5-flash") : (state.llm_model || "gpt-5");
-  populateModelSelect(provider, selectedModel);
+  await refreshModelsForProvider(provider, selectedModel);
 
   setStatus(
     `LLM: ${state.llm_enabled ? "enabled" : "disabled"} | PDF: ${state.pdf_available ? "available" : "not compiled"}`
@@ -388,6 +400,7 @@ async function saveSessionKey() {
     body: JSON.stringify({ api_key: apiKey, llm_provider: llmProvider }),
   });
   document.getElementById("apiKeyInput").value = "";
+  await refreshModelsForProvider(llmProvider);
   await loadSessionKeyStatus();
   setStatus("API key saved in secure session.");
 }
@@ -396,6 +409,8 @@ async function clearSessionKey() {
   await api("/api/session/key/clear", { method: "POST" });
   document.getElementById("apiKeyInput").value = "";
   setSessionKeyMeta(false);
+  const llmProvider = document.getElementById("providerSelect").value;
+  populateModelSelect(llmProvider);
   setStatus("Session key cleared.");
 }
 
@@ -419,7 +434,7 @@ function bindEvents() {
     clearSessionKey().catch((err) => setStatus(err.message));
   });
   document.getElementById("providerSelect").addEventListener("change", (e) => {
-    populateModelSelect(e.target.value);
+    refreshModelsForProvider(e.target.value).catch(() => populateModelSelect(e.target.value));
   });
 }
 

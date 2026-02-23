@@ -4,7 +4,10 @@ import os
 import secrets
 import threading
 import uuid
+import json
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import FastAPI, HTTPException
 from fastapi import Response
@@ -167,6 +170,37 @@ def _resolve_request_key_and_provider(request: Request, payload: TailorRequest) 
     return str(record["api_key"]), provider
 
 
+def _discover_openai_models(api_key: str) -> list[str]:
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key)
+    resp = client.models.list()
+    names: list[str] = []
+    for item in getattr(resp, "data", []):
+        model_id = getattr(item, "id", None)
+        if isinstance(model_id, str) and model_id.startswith("gpt-"):
+            names.append(model_id)
+    # Keep stable ordering for UI.
+    return sorted(set(names))
+
+
+def _discover_gemini_models(api_key: str) -> list[str]:
+    url = "https://generativelanguage.googleapis.com/v1beta/models?" + urlencode({"key": api_key})
+    req = UrlRequest(url, method="GET")
+    with urlopen(req, timeout=15) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    raw_models = payload.get("models", [])
+    names: list[str] = []
+    for model in raw_models:
+        name = model.get("name")
+        if not isinstance(name, str):
+            continue
+        short = name.split("/", 1)[-1]
+        if short.startswith("gemini-"):
+            names.append(short)
+    return sorted(set(names))
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", {"request": request})
@@ -201,6 +235,37 @@ def session_status(request: Request) -> dict:
     if not record:
         return {"has_key": False}
     return {"has_key": True, "provider": record["provider"]}
+
+
+@app.get("/api/models")
+def get_models(request: Request, provider: str) -> dict:
+    sid = request.cookies.get(SESSION_COOKIE_NAME)
+    if not sid:
+        raise HTTPException(status_code=400, detail="No session key set.")
+
+    record = session_keys.get(sid)
+    if not record:
+        raise HTTPException(status_code=400, detail="No session key set.")
+
+    provider_norm = (provider or "").strip().lower()
+    key_provider = str(record["provider"]).strip().lower()
+    if provider_norm not in {"openai", "gemini"}:
+        raise HTTPException(status_code=400, detail="Unsupported provider.")
+    if provider_norm != key_provider:
+        raise HTTPException(status_code=400, detail="Session key provider mismatch. Save a key for this provider first.")
+
+    api_key = str(record["api_key"])
+    try:
+        if provider_norm == "openai":
+            models = _discover_openai_models(api_key)
+        else:
+            models = _discover_gemini_models(api_key)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to load models for {provider_norm}: {exc}") from exc
+
+    if not models:
+        raise HTTPException(status_code=400, detail=f"No models returned for {provider_norm}.")
+    return {"provider": provider_norm, "models": models}
 
 
 @app.post("/api/session/key")
