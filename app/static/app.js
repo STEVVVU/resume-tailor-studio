@@ -1,6 +1,7 @@
 let activeJobId = null;
 let pollTimer = null;
 let workflowSteps = [];
+let tailorJobRunning = false;
 const MODEL_OPTIONS = {
   openai: ["gpt-5", "gpt-5-mini", "gpt-5.2"],
   gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
@@ -54,6 +55,14 @@ function setupTabs() {
       document.getElementById(target).classList.add("active");
     });
   });
+}
+
+function setTailorRunning(running) {
+  tailorJobRunning = Boolean(running);
+  const btn = document.getElementById("tailorBtn");
+  if (!btn) return;
+  btn.disabled = tailorJobRunning;
+  btn.textContent = tailorJobRunning ? "Tailoring..." : "Run Multi-Agent Tailor";
 }
 
 function setSessionKeyMeta(hasKey, provider = "") {
@@ -292,6 +301,7 @@ async function pollJobStatus() {
     document.getElementById("resumeInput").value = job.latex || "";
     stopPolling();
     activeJobId = null;
+    setTailorRunning(false);
     setStatus("Tailoring complete.");
     return;
   }
@@ -299,11 +309,17 @@ async function pollJobStatus() {
   if (job.status === "failed") {
     stopPolling();
     activeJobId = null;
+    setTailorRunning(false);
     setStatus(`Tailoring failed: ${job.error || "Unknown error"}`);
   }
 }
 
 async function tailorResume() {
+  if (tailorJobRunning) {
+    setStatus("A tailor job is already running.");
+    return;
+  }
+
   const jd = document.getElementById("jdInput").value.trim();
   const llmProvider = document.getElementById("providerSelect").value;
   const llmModel = document.getElementById("modelSelect").value;
@@ -313,6 +329,7 @@ async function tailorResume() {
   }
 
   stopPolling();
+  setTailorRunning(true);
   setProgress(0, "Queued");
   setStatus("Starting tailor job...");
 
@@ -331,6 +348,7 @@ async function tailorResume() {
     pollJobStatus().catch((err) => {
       stopPolling();
       activeJobId = null;
+      setTailorRunning(false);
       setStatus(`Progress polling failed: ${err.message}`);
     });
   }, 1200);
