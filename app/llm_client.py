@@ -88,7 +88,7 @@ class LLMClient:
         api_key_override: str | None = None,
         model_override: str | None = None,
     ) -> str:
-        active_key = api_key_override or self.gemini_api_key or self.openai_api_key
+        active_key = api_key_override or self.gemini_api_key
         if not active_key:
             raise RuntimeError("No Gemini API key available for Gemini provider.")
 

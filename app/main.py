@@ -151,14 +151,19 @@ def _set_session_cookie(response: Response, sid: str) -> None:
 
 def _resolve_request_key_and_provider(request: Request, payload: TailorRequest) -> tuple[str | None, str | None]:
     sid = request.cookies.get(SESSION_COOKIE_NAME)
-    provider = payload.llm_provider
+    provider = (payload.llm_provider or "").strip().lower() or None
     if not sid:
         return None, provider
     record = session_keys.get(sid)
     if not record:
         return None, provider
+    record_provider = str(record["provider"]).strip().lower()
     if not provider:
-        provider = record["provider"]
+        provider = record_provider
+    elif provider != record_provider:
+        # Do not use a session key saved for a different provider.
+        # This prevents sending Gemini keys to OpenAI (or vice versa).
+        return None, provider
     return str(record["api_key"]), provider
 
 
