@@ -36,12 +36,22 @@ app = FastAPI(title="Resume Tailor Studio")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
 
 
+@app.middleware("http")
+async def add_no_store_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 class ResumeUpdate(BaseModel):
     resume_latex: str
 
 
 class TailorRequest(BaseModel):
     job_description: str
+    api_key: str | None = None
 
 
 class CompileRequest(BaseModel):
@@ -192,7 +202,11 @@ def _run_tailor_sync(payload: TailorRequest) -> dict:
     orchestrator = ResumeOrchestrator(llm=llm, prompts=prompts)
 
     try:
-        result = orchestrator.tailor(current_resume=resume, job_description=payload.job_description)
+        result = orchestrator.tailor(
+            current_resume=resume,
+            job_description=payload.job_description,
+            api_key=payload.api_key,
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Tailor request failed: {exc}") from exc
     store.set("current_resume", result.latex)
@@ -240,6 +254,7 @@ def start_tailor_job(payload: TailorRequest) -> dict:
             result = orchestrator.tailor(
                 current_resume=resume,
                 job_description=payload.job_description,
+                api_key=payload.api_key,
                 progress_cb=on_progress,
             )
             store.set("current_resume", result.latex)

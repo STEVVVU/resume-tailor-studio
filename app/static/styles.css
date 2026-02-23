@@ -159,8 +159,21 @@ textarea {
   resize: vertical;
 }
 
+input[type="password"] {
+  width: 100%;
+  border: 1px solid #cabda7;
+  border-radius: 12px;
+  background: #fffdf8;
+  color: var(--ink);
+  padding: 10px 12px;
+  font-family: "Consolas", "Cascadia Code", monospace;
+  font-size: 12.8px;
+  margin-bottom: 10px;
+}
+
 textarea:focus,
-.step-input:focus {
+.step-input:focus,
+input[type="password"]:focus {
   outline: none;
   border-color: #bc8555;
   box-shadow: 0 0 0 3px rgba(212, 101, 69, 0.13);

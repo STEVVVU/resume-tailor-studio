@@ -17,9 +17,10 @@ class LLMClient:
     def enabled(self) -> bool:
         return self.client is not None
 
-    def complete(self, system_prompt: str, user_prompt: str) -> str:
-        if not self.client:
-            raise RuntimeError("OPENAI_API_KEY is not set.")
+    def complete(self, system_prompt: str, user_prompt: str, api_key_override: str | None = None) -> str:
+        active_client = OpenAI(api_key=api_key_override) if api_key_override else self.client
+        if not active_client:
+            raise RuntimeError("OPENAI_API_KEY is not set and no request-time API key was provided.")
 
         request_payload = {
             "model": self.model,
@@ -30,12 +31,12 @@ class LLMClient:
         }
 
         try:
-            response = self.client.responses.create(**request_payload)
+            response = active_client.responses.create(**request_payload)
         except BadRequestError as exc:
             # Keep a defensive fallback in case future optional params are rejected.
             message = str(exc)
             if "Unsupported parameter" in message:
-                response = self.client.responses.create(
+                response = active_client.responses.create(
                     model=self.model,
                     input=request_payload["input"],
                 )

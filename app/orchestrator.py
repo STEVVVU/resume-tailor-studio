@@ -23,6 +23,7 @@ class ResumeOrchestrator:
         self,
         current_resume: str,
         job_description: str,
+        api_key: str | None = None,
         progress_cb: Optional[Callable[[str, int, Optional[str]], None]] = None,
     ) -> OrchestrationResult:
         def update(stage: str, percent: int, jd_analysis: Optional[str] = None) -> None:
@@ -30,11 +31,11 @@ class ResumeOrchestrator:
                 progress_cb(stage, percent, jd_analysis)
 
         update("Preparing orchestration", 5)
-        if not self.llm.enabled:
+        if not self.llm.enabled and not api_key:
             disabled_msg = json.dumps(
                 {
                     "status": "llm_disabled",
-                    "message": "OPENAI_API_KEY missing; returning cached resume unchanged.",
+                    "message": "No API key available; returning cached resume unchanged.",
                 },
                 indent=2,
             )
@@ -62,6 +63,7 @@ class ResumeOrchestrator:
                     job_description=job_description,
                     artifacts=artifacts,
                 ),
+                api_key_override=api_key,
             )
             artifacts.append(f"{agent.name}\n{result}")
 

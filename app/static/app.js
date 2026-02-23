@@ -257,6 +257,7 @@ async function pollJobStatus() {
 
 async function tailorResume() {
   const jd = document.getElementById("jdInput").value.trim();
+  const apiKey = document.getElementById("apiKeyInput").value.trim();
   if (!jd) {
     setStatus("Paste a job description first.");
     return;
@@ -268,8 +269,9 @@ async function tailorResume() {
 
   const start = await api("/api/tailor/start", {
     method: "POST",
-    body: JSON.stringify({ job_description: jd }),
+    body: JSON.stringify({ job_description: jd, api_key: apiKey || null }),
   });
+  document.getElementById("apiKeyInput").value = "";
 
   activeJobId = start.job_id;
   await pollJobStatus();

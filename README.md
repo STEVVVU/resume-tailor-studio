@@ -1,16 +1,49 @@
 # Resume Tailor Studio
 
-Local/hosted web app for resume tailoring with cached LaTeX resume state, JD input, dynamic multi-agent orchestration, and PDF preview/download.
+Resume Tailor Studio is a web app that tailors a LaTeX resume to a pasted job description using dynamic multi-agent orchestration.
 
-## Features
+## What It Does
 
-- Persistent cached resume (SQLite-backed)
-- JD paste + dynamic workflow-agent orchestration from instructions
-- Rules + workflow editor in UI
-- Compile to PDF (`tectonic`, `pdflatex`, or `xelatex`)
-- In-app PDF preview + direct download
+- Caches your resume LaTeX between sessions (SQLite state)
+- Lets you paste a JD and run dynamic agent workflow steps
+- Lets you edit global rules and workflow steps in-app
+- Supports request-time OpenAI API key input (not persisted)
+- Compiles LaTeX to PDF and shows in-app preview
+- Supports PDF download
 
-## Local Setup
+## Tech Stack
+
+- FastAPI (`app/main.py`)
+- OpenAI Responses API (`app/llm_client.py`)
+- Dynamic prompt/workflow parsing (`app/prompt_splitter.py`)
+- Agent orchestration (`app/orchestrator.py`)
+- SQLite state store (`app/storage.py`)
+- Vanilla HTML/CSS/JS frontend (`app/templates`, `app/static`)
+
+## Project Structure
+
+```text
+resume-tailor-studio/
+  app/
+    main.py
+    llm_client.py
+    orchestrator.py
+    prompt_splitter.py
+    latex_service.py
+    storage.py
+    templates/index.html
+    static/app.js
+    static/styles.css
+  data/
+    instructions.default.md
+  Dockerfile
+  render.yaml
+  requirements.txt
+```
+
+## Local Development
+
+### 1. Create venv and install
 
 ```powershell
 cd C:\Users\Steven\Downloads\Projects\resume-tailor-studio
@@ -19,65 +52,90 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Local Run
+### 2. Set environment variables
 
 ```powershell
-$env:OPENAI_API_KEY="your_key"
-$env:OPENAI_MODEL="gpt-5"  # optional
+$env:OPENAI_API_KEY="your_key_here"
+$env:OPENAI_MODEL="gpt-5"                # optional
+$env:DATA_DIR="C:\Users\Steven\Downloads\Projects\resume-tailor-studio\data"  # optional
+```
+
+Optional local defaults:
+
+```powershell
+$env:DEFAULT_RESUME_PATH="C:\Users\Steven\Downloads\resume.tex"
+$env:DEFAULT_INSTRUCTIONS_PATH="C:\Users\Steven\Downloads\instructions.md"
+```
+
+### 3. Run app
+
+```powershell
 uvicorn app.main:app --reload --port 8080
 ```
 
-Open `http://127.0.0.1:8080`.
+Open: `http://127.0.0.1:8080`
 
-## Production Deploy (Always-On)
+## Deployment
 
-This repo includes:
-- `Dockerfile`
-- `.dockerignore`
-- `render.yaml`
-- health endpoint: `GET /healthz`
+### Render (Free tier)
 
-### Option A: Railway (recommended fastest)
-
-1. Push this folder to GitHub.
-2. Create Railway project from repo.
-3. Railway detects Dockerfile and deploys.
-4. Set env vars:
+1. Push this repo to GitHub.
+2. In Render: `New` -> `Web Service` -> `Public Git Repository`.
+3. Use repo URL (example): `https://github.com/STEVVVU/resume-tailor-studio`.
+4. Select Docker runtime.
+5. Add env vars:
    - `OPENAI_API_KEY` (required)
    - `OPENAI_MODEL=gpt-5` (optional)
    - `DATA_DIR=/var/data`
-5. Add a Volume mounted to `/var/data`.
-6. Open generated public URL.
+6. Deploy.
 
 Notes:
-- Railway free is not permanent; use Hobby/paid for durable hosting.
-- Keep app and volume in same region.
+- Free Render sleeps on idle and is not always-on.
+- Free tier does not provide durable persistent disk behavior for production use.
 
-### Option B: Render (always-on with paid instance)
+## Environment Variables
 
-1. Push repo to GitHub.
-2. In Render, create a new Web Service from repo.
-3. Render will read `render.yaml` and configure service + disk.
-4. Set `OPENAI_API_KEY` in Render dashboard.
-5. Deploy.
+- `OPENAI_API_KEY` (required for tailoring)
+- `OPENAI_MODEL` (default: `gpt-5`)
+- `DATA_DIR` (default: `./data`)
+- `DEFAULT_RESUME_PATH` (optional)
+- `DEFAULT_INSTRUCTIONS_PATH` (optional)
 
-Notes:
-- Render Free spins down after idle and is not production-grade.
-- Use paid instance type for always-on behavior.
+## API Endpoints
 
-## Data + Persistence
+- `GET /` UI
+- `GET /healthz` health check
+- `GET /api/state` app state
+- `GET /api/instructions` load active instructions
+- `PUT /api/instructions` save custom instructions
+- `POST /api/instructions/reset` reset to default instructions
+- `PUT /api/resume` save cached resume
+- `POST /api/tailor/start` start async tailor job
+- `GET /api/tailor/status/{job_id}` poll job status
+- `POST /api/compile` compile current LaTeX to PDF
+- `GET /api/pdf/latest` inline preview PDF
+- `GET /api/pdf/download` download PDF
 
-- App data (state DB, custom instructions, compiled PDF) lives under `DATA_DIR`.
-- For hosted deployments, use persistent disk/volume and set `DATA_DIR=/var/data`.
+## Troubleshooting
+
+- `400 Unsupported parameter: temperature`
+  - Fixed in current build by using compatible Responses API payload.
+
+- `POST /api/compile` returns `400`
+  - Local machine missing/blocked LaTeX compiler setup.
+  - Hosted Docker build includes `tectonic`.
+
+- Browser logs `304 Not Modified`
+  - Normal cache behavior.
+
+- Browser logs `GET /favicon.ico 404`
+  - Harmless unless you add a favicon file.
 
 ## Security
 
-- Never commit API keys.
-- Rotate keys if exposed.
+- Do not commit API keys.
+- If a key is exposed, revoke and rotate immediately.
 
-## Project URLs for resume
+## License
 
-After deploy, add:
-- Live URL (app)
-- GitHub repo URL
-- Optional short Loom demo showing JD -> tailored LaTeX -> compile -> PDF preview
+Use for personal/portfolio/demo purposes unless you add your own project license.
