@@ -40,9 +40,9 @@
           <div>
             <label for="apiKeyInput">API Key (stored server-side in secure session)</label>
             <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-... / AIza..." />
-            <div class="row compact">
-              <button id="saveKeyBtn" type="button">Save Key to Secure Session</button>
-              <button id="clearKeyBtn" type="button">Clear Session Key</button>
+            <div class="row compact key-actions">
+              <button id="saveKeyBtn" type="button" class="primary">Save Key</button>
+              <button id="clearKeyBtn" type="button" class="ghost-danger">Clear</button>
             </div>
             <p class="muted" id="sessionKeyMeta">Session key: not set</p>
           </div>
@@ -103,12 +103,12 @@
         </div>
 
         <div class="card">
-          <div class="row between">
+          <div class="row between workflow-header">
             <label>Workflow Steps (Dynamic Agents)</label>
             <button id="addStepBtn">Add Step</button>
           </div>
           <div id="stepsList" class="steps-list"></div>
-          <div class="row compact top-gap">
+          <div class="row compact workflow-footer">
             <button id="syncStepsBtn">Apply Steps to Rules Text</button>
           </div>
         </div>

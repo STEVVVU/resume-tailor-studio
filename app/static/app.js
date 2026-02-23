@@ -135,7 +135,9 @@ function renderWorkflowSteps() {
     actions.className = "step-actions";
 
     const upBtn = document.createElement("button");
-    upBtn.textContent = "Up";
+    upBtn.textContent = "↑";
+    upBtn.title = "Move step up";
+    upBtn.setAttribute("aria-label", "Move step up");
     upBtn.disabled = idx === 0;
     upBtn.addEventListener("click", () => {
       if (idx === 0) return;
@@ -144,7 +146,9 @@ function renderWorkflowSteps() {
     });
 
     const downBtn = document.createElement("button");
-    downBtn.textContent = "Down";
+    downBtn.textContent = "↓";
+    downBtn.title = "Move step down";
+    downBtn.setAttribute("aria-label", "Move step down");
     downBtn.disabled = idx === workflowSteps.length - 1;
     downBtn.addEventListener("click", () => {
       if (idx === workflowSteps.length - 1) return;
@@ -153,7 +157,9 @@ function renderWorkflowSteps() {
     });
 
     const delBtn = document.createElement("button");
-    delBtn.textContent = "Delete";
+    delBtn.textContent = "×";
+    delBtn.title = "Delete step";
+    delBtn.setAttribute("aria-label", "Delete step");
     delBtn.addEventListener("click", () => {
       workflowSteps.splice(idx, 1);
       renderWorkflowSteps();
