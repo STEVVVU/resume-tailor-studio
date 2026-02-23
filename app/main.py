@@ -52,6 +52,8 @@ class ResumeUpdate(BaseModel):
 class TailorRequest(BaseModel):
     job_description: str
     api_key: str | None = None
+    llm_provider: str | None = None
+    llm_model: str | None = None
 
 
 class CompileRequest(BaseModel):
@@ -135,6 +137,9 @@ def get_state() -> dict:
         "instructions_path": str(instructions_path),
         "instructions_source": source,
         "llm_enabled": llm.enabled,
+        "llm_provider": llm.default_provider,
+        "llm_model": llm.default_model,
+        "llm_gemini_model": llm.default_gemini_model,
         "pdf_available": OUTPUT_PDF.exists(),
     }
 
@@ -206,6 +211,8 @@ def _run_tailor_sync(payload: TailorRequest) -> dict:
             current_resume=resume,
             job_description=payload.job_description,
             api_key=payload.api_key,
+            llm_provider=payload.llm_provider,
+            llm_model=payload.llm_model,
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Tailor request failed: {exc}") from exc
@@ -255,6 +262,8 @@ def start_tailor_job(payload: TailorRequest) -> dict:
                 current_resume=resume,
                 job_description=payload.job_description,
                 api_key=payload.api_key,
+                llm_provider=payload.llm_provider,
+                llm_model=payload.llm_model,
                 progress_cb=on_progress,
             )
             store.set("current_resume", result.latex)

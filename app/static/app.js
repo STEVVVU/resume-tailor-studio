@@ -1,6 +1,10 @@
 let activeJobId = null;
 let pollTimer = null;
 let workflowSteps = [];
+const MODEL_OPTIONS = {
+  openai: ["gpt-5", "gpt-5-mini", "gpt-5.2"],
+  gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
+};
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -50,6 +54,25 @@ function setupTabs() {
       document.getElementById(target).classList.add("active");
     });
   });
+}
+
+function populateModelSelect(provider, selectedModel) {
+  const modelSelect = document.getElementById("modelSelect");
+  const options = MODEL_OPTIONS[provider] || [];
+  modelSelect.innerHTML = "";
+
+  options.forEach((model) => {
+    const opt = document.createElement("option");
+    opt.value = model;
+    opt.textContent = model;
+    modelSelect.appendChild(opt);
+  });
+
+  if (selectedModel && options.includes(selectedModel)) {
+    modelSelect.value = selectedModel;
+  } else if (options.length > 0) {
+    modelSelect.value = options[0];
+  }
 }
 
 function parseWorkflowStepsFromText(content) {
@@ -197,6 +220,10 @@ async function loadState() {
   const state = await api("/api/state", { method: "GET" });
   document.getElementById("resumeInput").value = state.resume_latex || "";
   document.getElementById("latexOutput").value = state.resume_latex || "";
+  const provider = state.llm_provider || "openai";
+  document.getElementById("providerSelect").value = provider;
+  const selectedModel = provider === "gemini" ? (state.llm_gemini_model || "gemini-2.5-flash") : (state.llm_model || "gpt-5");
+  populateModelSelect(provider, selectedModel);
 
   setStatus(
     `LLM: ${state.llm_enabled ? "enabled" : "disabled"} | PDF: ${state.pdf_available ? "available" : "not compiled"}`
@@ -258,6 +285,8 @@ async function pollJobStatus() {
 async function tailorResume() {
   const jd = document.getElementById("jdInput").value.trim();
   const apiKey = document.getElementById("apiKeyInput").value.trim();
+  const llmProvider = document.getElementById("providerSelect").value;
+  const llmModel = document.getElementById("modelSelect").value;
   if (!jd) {
     setStatus("Paste a job description first.");
     return;
@@ -269,7 +298,12 @@ async function tailorResume() {
 
   const start = await api("/api/tailor/start", {
     method: "POST",
-    body: JSON.stringify({ job_description: jd, api_key: apiKey || null }),
+    body: JSON.stringify({
+      job_description: jd,
+      api_key: apiKey || null,
+      llm_provider: llmProvider,
+      llm_model: llmModel || null,
+    }),
   });
   document.getElementById("apiKeyInput").value = "";
 
@@ -318,6 +352,9 @@ function bindEvents() {
   });
   document.getElementById("addStepBtn").addEventListener("click", addWorkflowStep);
   document.getElementById("syncStepsBtn").addEventListener("click", syncStepsToInstructionsText);
+  document.getElementById("providerSelect").addEventListener("change", (e) => {
+    populateModelSelect(e.target.value);
+  });
 }
 
 setupTabs();

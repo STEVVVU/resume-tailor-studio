@@ -24,6 +24,8 @@ class ResumeOrchestrator:
         current_resume: str,
         job_description: str,
         api_key: str | None = None,
+        llm_provider: str | None = None,
+        llm_model: str | None = None,
         progress_cb: Optional[Callable[[str, int, Optional[str]], None]] = None,
     ) -> OrchestrationResult:
         def update(stage: str, percent: int, jd_analysis: Optional[str] = None) -> None:
@@ -64,6 +66,8 @@ class ResumeOrchestrator:
                     artifacts=artifacts,
                 ),
                 api_key_override=api_key,
+                provider_override=llm_provider,
+                model_override=llm_model,
             )
             artifacts.append(f"{agent.name}\n{result}")
 

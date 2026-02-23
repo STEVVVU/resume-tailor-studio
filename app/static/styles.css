@@ -138,6 +138,13 @@ p {
   grid-template-columns: 1fr 1fr;
 }
 
+.grid-three {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 8px;
+}
+
 label {
   display: block;
   margin-bottom: 8px;
@@ -168,12 +175,28 @@ input[type="password"] {
   padding: 10px 12px;
   font-family: "Consolas", "Cascadia Code", monospace;
   font-size: 12.8px;
-  margin-bottom: 10px;
+}
+
+input[type="text"],
+select {
+  width: 100%;
+  border: 1px solid #cabda7;
+  border-radius: 12px;
+  background: #fffdf8;
+  color: var(--ink);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+#apiKeyInput {
+  margin-bottom: 0;
 }
 
 textarea:focus,
 .step-input:focus,
-input[type="password"]:focus {
+input[type="password"]:focus,
+input[type="text"]:focus,
+select:focus {
   outline: none;
   border-color: #bc8555;
   box-shadow: 0 0 0 3px rgba(212, 101, 69, 0.13);
@@ -333,6 +356,10 @@ a:hover {
   }
 
   .grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .grid-three {
     grid-template-columns: 1fr;
   }
 
