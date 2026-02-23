@@ -3,10 +3,51 @@ let pollTimer = null;
 let workflowSteps = [];
 let tailorJobRunning = false;
 let compileRunning = false;
+const LOCAL_KEYS = {
+  resume: "rts_resume_latex",
+  instructions: "rts_instructions_text",
+  workflow: "rts_workflow_steps",
+};
 const MODEL_OPTIONS = {
   openai: ["gpt-5", "gpt-5-mini", "gpt-5.2"],
   gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
 };
+
+function readLocal(key, fallback = "") {
+  try {
+    const value = localStorage.getItem(key);
+    return value == null ? fallback : value;
+  } catch (_err) {
+    return fallback;
+  }
+}
+
+function writeLocal(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (_err) {
+    // Ignore storage failures (private mode/quota).
+  }
+}
+
+function removeLocal(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (_err) {
+    // Ignore storage failures.
+  }
+}
+
+function readLocalWorkflow() {
+  const raw = readLocal(LOCAL_KEYS.workflow, "");
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_err) {
+    return [];
+  }
+}
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -223,12 +264,17 @@ function syncStepsToInstructionsText() {
 
 async function loadInstructions() {
   const payload = await api("/api/instructions", { method: "GET" });
-  document.getElementById("instructionsInput").value = payload.content || "";
+  const localInstructions = readLocal(LOCAL_KEYS.instructions, "");
+  const activeInstructions = localInstructions || payload.content || "";
+  document.getElementById("instructionsInput").value = activeInstructions;
   document.getElementById("instructionsMeta").textContent = `Source: ${payload.source} | Path: ${payload.path}`;
 
-  workflowSteps = payload.workflow_steps && payload.workflow_steps.length
-    ? payload.workflow_steps.slice()
-    : parseWorkflowStepsFromText(payload.content || "");
+  const localWorkflow = readLocalWorkflow();
+  workflowSteps = Array.isArray(localWorkflow) && localWorkflow.length
+    ? localWorkflow
+    : (payload.workflow_steps && payload.workflow_steps.length
+      ? payload.workflow_steps.slice()
+      : parseWorkflowStepsFromText(activeInstructions));
 
   renderWorkflowSteps();
 }
@@ -243,6 +289,8 @@ async function saveInstructions() {
 
   document.getElementById("instructionsMeta").textContent = `Source: ${payload.source} | Path: ${payload.path}`;
   workflowSteps = payload.workflow_steps || workflowSteps;
+  writeLocal(LOCAL_KEYS.instructions, content);
+  writeLocal(LOCAL_KEYS.workflow, JSON.stringify(workflowSteps));
   renderWorkflowSteps();
   setStatus("Custom rules saved.");
   setSourcePill(`Instructions source: ${payload.source}`);
@@ -253,6 +301,8 @@ async function resetInstructions() {
   document.getElementById("instructionsInput").value = payload.content || "";
   document.getElementById("instructionsMeta").textContent = `Source: ${payload.source} | Path: ${payload.path}`;
   workflowSteps = payload.workflow_steps || [];
+  removeLocal(LOCAL_KEYS.instructions);
+  removeLocal(LOCAL_KEYS.workflow);
   renderWorkflowSteps();
   setStatus("Reset to default rules file.");
   setSourcePill("Instructions source: default");
@@ -260,8 +310,10 @@ async function resetInstructions() {
 
 async function loadState() {
   const state = await api("/api/state", { method: "GET" });
-  document.getElementById("resumeInput").value = state.resume_latex || "";
-  document.getElementById("latexOutput").value = state.resume_latex || "";
+  const localResume = readLocal(LOCAL_KEYS.resume, "");
+  const activeResume = localResume || state.resume_latex || "";
+  document.getElementById("resumeInput").value = activeResume;
+  document.getElementById("latexOutput").value = activeResume;
   const provider = state.llm_provider || "openai";
   document.getElementById("providerSelect").value = provider;
   const selectedModel = provider === "gemini" ? (state.llm_gemini_model || "gemini-2.5-flash") : (state.llm_model || "gpt-5");
@@ -287,6 +339,7 @@ async function saveResume() {
     body: JSON.stringify({ resume_latex: resume }),
   });
   document.getElementById("latexOutput").value = resume;
+  writeLocal(LOCAL_KEYS.resume, resume);
   setStatus("Resume cache saved.");
 }
 
@@ -453,6 +506,12 @@ function bindEvents() {
   });
   document.getElementById("providerSelect").addEventListener("change", (e) => {
     refreshModelsForProvider(e.target.value).catch(() => populateModelSelect(e.target.value));
+  });
+  document.getElementById("resumeInput").addEventListener("input", (e) => {
+    writeLocal(LOCAL_KEYS.resume, e.target.value || "");
+  });
+  document.getElementById("instructionsInput").addEventListener("input", (e) => {
+    writeLocal(LOCAL_KEYS.instructions, e.target.value || "");
   });
 }
 
