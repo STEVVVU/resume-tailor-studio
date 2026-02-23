@@ -6,9 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system deps and lightweight LaTeX compiler for PDF generation.
+# Install system deps and LaTeX compiler for PDF generation.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tectonic \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        texlive-latex-base \
+        texlive-latex-recommended \
+        texlive-latex-extra \
+        texlive-fonts-recommended \
+        texlive-xetex \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
