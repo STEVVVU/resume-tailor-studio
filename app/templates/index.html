@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resume Tailor Studio</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Resume Tailor Studio</h1>
+        <p id="statusLine">Loading state...</p>
+      </div>
+      <div class="meta-pill" id="sourcePill">Instructions: -</div>
+    </header>
+
+    <nav class="tabs" aria-label="Main tabs">
+      <button class="tab active" data-tab="tailorTab">Tailor</button>
+      <button class="tab" data-tab="resumeTab">Resume</button>
+      <button class="tab" data-tab="rulesTab">Rules & Agents</button>
+      <button class="tab" data-tab="previewTab">Preview</button>
+    </nav>
+
+    <section id="tailorTab" class="tab-panel active">
+      <div class="card">
+        <label for="jdInput">Job Description</label>
+        <textarea id="jdInput" spellcheck="false" placeholder="Paste job description here..."></textarea>
+        <div class="row">
+          <button id="tailorBtn" class="primary">Run Multi-Agent Tailor</button>
+          <button id="compileBtn">Compile to PDF</button>
+          <a id="downloadBtn" href="/api/pdf/download" download="resume.pdf">Download PDF</a>
+        </div>
+
+        <div class="progress-wrap">
+          <div class="progress-head">
+            <span id="progressLabel">Progress</span>
+            <span id="progressPct">0%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-two">
+        <div class="card">
+          <label for="analysisOutput">JD Analysis (Agent Outputs)</label>
+          <textarea id="analysisOutput" readonly></textarea>
+        </div>
+        <div class="card">
+          <label for="latexOutput">Tailored LaTeX</label>
+          <textarea id="latexOutput" spellcheck="false"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section id="resumeTab" class="tab-panel">
+      <div class="card">
+        <div class="row between">
+          <label for="resumeInput">Cached Resume (LaTeX)</label>
+          <button id="saveResumeBtn">Save Resume Cache</button>
+        </div>
+        <textarea id="resumeInput" spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <section id="rulesTab" class="tab-panel">
+      <div class="grid-two">
+        <div class="card">
+          <div class="row between">
+            <label for="instructionsInput">Global Rules (instructions)</label>
+            <div class="row compact">
+              <button id="saveInstructionsBtn" class="primary">Save Custom Rules</button>
+              <button id="resetInstructionsBtn">Reset to Default</button>
+            </div>
+          </div>
+          <p class="muted" id="instructionsMeta">Source: -</p>
+          <textarea id="instructionsInput" spellcheck="false"></textarea>
+        </div>
+
+        <div class="card">
+          <div class="row between">
+            <label>Workflow Steps (Dynamic Agents)</label>
+            <button id="addStepBtn">Add Step</button>
+          </div>
+          <div id="stepsList" class="steps-list"></div>
+          <div class="row compact top-gap">
+            <button id="syncStepsBtn">Apply Steps to Rules Text</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="previewTab" class="tab-panel">
+      <div class="card preview-card">
+        <h2>PDF Preview</h2>
+        <iframe id="pdfFrame" title="PDF Preview" src="about:blank"></iframe>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: resume-tailor-studio
+    runtime: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5
+      - key: DATA_DIR
+        value: /var/data
+      - key: DEFAULT_RESUME_PATH
+        value: /var/data/resume.tex
+      - key: DEFAULT_INSTRUCTIONS_PATH
+        value: /var/data/instructions.md
+    disk:
+      name: resume-tailor-data
+      mountPath: /var/data
+      sizeGB: 1
