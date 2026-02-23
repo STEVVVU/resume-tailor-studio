@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -24,6 +25,8 @@ def compile_resume(latex_source: str, output_pdf: Path) -> None:
 
     output_pdf.parent.mkdir(parents=True, exist_ok=True)
 
+    timeout_seconds = int(os.getenv("LATEX_COMPILE_TIMEOUT_SECONDS", "90"))
+
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)
         tex_path = temp_dir / "resume.tex"
@@ -34,13 +37,23 @@ def compile_resume(latex_source: str, output_pdf: Path) -> None:
         else:
             cmd = [engine, "-interaction=nonstopmode", "-halt-on-error", str(tex_path)]
 
-        proc = subprocess.run(
-            cmd,
-            cwd=temp_dir,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            tail = ""
+            if exc.stdout or exc.stderr:
+                tail = "\n".join(((exc.stdout or "") + "\n" + (exc.stderr or "")).splitlines()[-30:])
+            message = f"LaTeX compile timed out after {timeout_seconds}s with {engine}."
+            if tail:
+                message = f"{message}\n{tail}"
+            raise LatexCompileError(message) from exc
 
         if proc.returncode != 0:
             tail = "\n".join((proc.stdout + "\n" + proc.stderr).splitlines()[-30:])

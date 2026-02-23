@@ -2,6 +2,7 @@ let activeJobId = null;
 let pollTimer = null;
 let workflowSteps = [];
 let tailorJobRunning = false;
+let compileRunning = false;
 const MODEL_OPTIONS = {
   openai: ["gpt-5", "gpt-5-mini", "gpt-5.2"],
   gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
@@ -367,19 +368,36 @@ async function tailorResume() {
 }
 
 async function compilePdf() {
+  if (compileRunning) {
+    setStatus("PDF compile is already running.");
+    return;
+  }
+
   const latex = document.getElementById("latexOutput").value;
   if (!latex.trim()) {
     setStatus("No LaTeX available to compile.");
     return;
   }
 
+  const compileBtn = document.getElementById("compileBtn");
+  compileRunning = true;
+  compileBtn.disabled = true;
+  compileBtn.textContent = "Compiling...";
   setStatus("Compiling PDF...");
-  await api("/api/compile", {
-    method: "POST",
-    body: JSON.stringify({ latex }),
-  });
-  refreshPreview();
-  setStatus("Compiled PDF and refreshed preview.");
+  try {
+    await api("/api/compile", {
+      method: "POST",
+      body: JSON.stringify({ latex }),
+    });
+    refreshPreview();
+    setStatus("Compiled PDF and refreshed preview.");
+  } catch (err) {
+    setStatus(`PDF compile failed: ${err.message}`);
+  } finally {
+    compileRunning = false;
+    compileBtn.disabled = false;
+    compileBtn.textContent = "Compile to PDF";
+  }
 }
 
 function addWorkflowStep() {
