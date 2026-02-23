@@ -5,6 +5,7 @@ import secrets
 import threading
 import uuid
 import json
+import re
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request as UrlRequest, urlopen
@@ -27,6 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
 STATE_DB = DATA_DIR / "state.db"
 OUTPUT_PDF = DATA_DIR / "resume-latest.pdf"
+PDF_FILENAME = os.getenv("RESUME_PDF_FILENAME", "FirstLastResume.pdf")
 CUSTOM_INSTRUCTIONS_PATH = DATA_DIR / "instructions.custom.md"
 BUNDLED_INSTRUCTIONS_PATH = BASE_DIR / "data" / "instructions.default.md"
 
@@ -168,6 +170,40 @@ def _resolve_request_key_and_provider(request: Request, payload: TailorRequest) 
         # This prevents sending Gemini keys to OpenAI (or vice versa).
         return None, provider
     return str(record["api_key"]), provider
+
+
+def _safe_pdf_filename(name: str | None = None) -> str:
+    if not name:
+        base = PDF_FILENAME
+    else:
+        base = re.sub(r"[^A-Za-z0-9_ -]+", "", name).strip().replace(" ", "_")
+        if not base:
+            base = PDF_FILENAME
+        if not base.lower().endswith("_resume"):
+            base = f"{base}_Resume"
+    return base if base.lower().endswith(".pdf") else f"{base}.pdf"
+
+
+def _extract_resume_name(latex: str) -> str | None:
+    # Common pattern in this template:
+    # \textbf{\Huge \scshape Steven Vu}
+    patterns = [
+        r"\\textbf\{\\Huge\s+\\scshape\s+([^}]+)\}",
+        r"\\textbf\{\\Huge\s+([^}]+)\}",
+        r"\\textbf\{([^}]+)\}",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, latex)
+        if match:
+            candidate = match.group(1).strip()
+            if candidate:
+                return candidate
+    return None
+
+
+def _get_latest_pdf_filename() -> str:
+    stored = store.get("latest_pdf_filename")
+    return _safe_pdf_filename(stored if stored else None)
 
 
 def _discover_openai_models(api_key: str) -> list[str]:
@@ -451,6 +487,9 @@ def compile_latex(payload: CompileRequest) -> dict:
     except LatexCompileError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    resume_name = _extract_resume_name(payload.latex)
+    store.set("latest_pdf_filename", _safe_pdf_filename(resume_name))
+
     return {"ok": True, "pdf_url": "/api/pdf/latest"}
 
 
@@ -458,10 +497,11 @@ def compile_latex(payload: CompileRequest) -> dict:
 def latest_pdf() -> FileResponse:
     if not OUTPUT_PDF.exists():
         raise HTTPException(status_code=404, detail="No compiled PDF available yet.")
+    safe_name = _get_latest_pdf_filename()
     return FileResponse(
         str(OUTPUT_PDF),
         media_type="application/pdf",
-        headers={"Content-Disposition": 'inline; filename="resume.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
     )
 
 
@@ -469,4 +509,5 @@ def latest_pdf() -> FileResponse:
 def download_pdf() -> FileResponse:
     if not OUTPUT_PDF.exists():
         raise HTTPException(status_code=404, detail="No compiled PDF available yet.")
-    return FileResponse(str(OUTPUT_PDF), media_type="application/pdf", filename="resume.pdf")
+    safe_name = _get_latest_pdf_filename()
+    return FileResponse(str(OUTPUT_PDF), media_type="application/pdf", filename=safe_name)
