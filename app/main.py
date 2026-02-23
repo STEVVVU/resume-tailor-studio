@@ -184,21 +184,69 @@ def _safe_pdf_filename(name: str | None = None) -> str:
     return base if base.lower().endswith(".pdf") else f"{base}.pdf"
 
 
+def _extract_filename_metadata(latex: str) -> str | None:
+    # Optional explicit metadata comment for deterministic output:
+    # %RESUME_FILENAME=First_Last_Resume.pdf
+    match = re.search(r"^\s*%\s*RESUME_FILENAME\s*=\s*([^\r\n]+)\s*$", latex, flags=re.IGNORECASE | re.MULTILINE)
+    if not match:
+        return None
+    candidate = match.group(1).strip()
+    return candidate or None
+
+
 def _extract_resume_name(latex: str) -> str | None:
-    # Common pattern in this template:
+    # 1) Template-aware macro parsing.
+    first = re.search(r"\\firstname\{([^{}]+)\}", latex)
+    last = re.search(r"\\familyname\{([^{}]+)\}", latex)
+    if first and last:
+        return f"{first.group(1).strip()} {last.group(1).strip()}".strip()
+
+    macro_patterns = [
+        # \name{First}{Last}
+        r"\\name\{([^{}]+)\}\{([^{}]+)\}",
+        # \name{Full Name}
+        r"\\name\{([^{}]+)\}",
+        # \cvname{Full Name}
+        r"\\cvname\{([^{}]+)\}",
+        # \author{Full Name}
+        r"\\author\{([^{}]+)\}",
+    ]
+    for pattern in macro_patterns:
+        m = re.search(pattern, latex)
+        if not m:
+            continue
+        if len(m.groups()) == 2:
+            return f"{m.group(1).strip()} {m.group(2).strip()}".strip()
+        return m.group(1).strip()
+
+    # 2) Header fallback for custom templates:
     # \textbf{\Huge \scshape Steven Vu}
-    patterns = [
+    header_patterns = [
         r"\\textbf\{\\Huge\s+\\scshape\s+([^}]+)\}",
         r"\\textbf\{\\Huge\s+([^}]+)\}",
-        r"\\textbf\{([^}]+)\}",
     ]
-    for pattern in patterns:
+    for pattern in header_patterns:
         match = re.search(pattern, latex)
         if match:
             candidate = match.group(1).strip()
             if candidate:
                 return candidate
+
+    # 3) Last fallback (broad; may be noisy in some templates).
+    broad = re.search(r"\\textbf\{([^}]+)\}", latex)
+    if broad:
+        candidate = broad.group(1).strip()
+        if candidate:
+            return candidate
     return None
+
+
+def _derive_pdf_filename(latex: str) -> str:
+    explicit = _extract_filename_metadata(latex)
+    if explicit:
+        return _safe_pdf_filename(explicit)
+    parsed_name = _extract_resume_name(latex)
+    return _safe_pdf_filename(parsed_name)
 
 
 def _get_latest_pdf_filename() -> str:
@@ -487,8 +535,7 @@ def compile_latex(payload: CompileRequest) -> dict:
     except LatexCompileError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    resume_name = _extract_resume_name(payload.latex)
-    store.set("latest_pdf_filename", _safe_pdf_filename(resume_name))
+    store.set("latest_pdf_filename", _derive_pdf_filename(payload.latex))
 
     return {"ok": True, "pdf_url": "/api/pdf/latest"}
 
