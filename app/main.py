@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import secrets
 import threading
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi import Response
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -16,7 +18,7 @@ from .latex_service import LatexCompileError, compile_resume
 from .llm_client import LLMClient
 from .orchestrator import ResumeOrchestrator
 from .prompt_splitter import build_prompt_bundle, extract_workflow_steps_from_text
-from .storage import StateStore
+from .storage import SessionKeyStore, StateStore
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
@@ -27,8 +29,13 @@ BUNDLED_INSTRUCTIONS_PATH = BASE_DIR / "data" / "instructions.default.md"
 
 DEFAULT_RESUME_PATH = Path(os.getenv("DEFAULT_RESUME_PATH", r"C:\Users\Steven\Downloads\resume.tex"))
 DEFAULT_INSTRUCTIONS_PATH = Path(os.getenv("DEFAULT_INSTRUCTIONS_PATH", r"C:\Users\Steven\Downloads\instructions.md"))
+SESSION_COOKIE_NAME = "rts_session"
+SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "24"))
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+SESSION_SECRET = os.getenv("SESSION_SECRET", "change-me-in-production")
 
 store = StateStore(STATE_DB)
+session_keys = SessionKeyStore(STATE_DB, SESSION_SECRET)
 llm = LLMClient()
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
@@ -51,9 +58,13 @@ class ResumeUpdate(BaseModel):
 
 class TailorRequest(BaseModel):
     job_description: str
-    api_key: str | None = None
     llm_provider: str | None = None
     llm_model: str | None = None
+
+
+class SessionKeyRequest(BaseModel):
+    api_key: str
+    llm_provider: str = "openai"
 
 
 class CompileRequest(BaseModel):
@@ -119,6 +130,38 @@ def _load_instructions_path() -> Path:
     return path
 
 
+def _get_or_create_session_id(request: Request) -> str:
+    sid = request.cookies.get(SESSION_COOKIE_NAME)
+    if sid:
+        return sid
+    return secrets.token_urlsafe(32)
+
+
+def _set_session_cookie(response: Response, sid: str) -> None:
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=sid,
+        max_age=SESSION_TTL_HOURS * 3600,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+    )
+
+
+def _resolve_request_key_and_provider(request: Request, payload: TailorRequest) -> tuple[str | None, str | None]:
+    sid = request.cookies.get(SESSION_COOKIE_NAME)
+    provider = payload.llm_provider
+    if not sid:
+        return None, provider
+    record = session_keys.get(sid)
+    if not record:
+        return None, provider
+    if not provider:
+        provider = record["provider"]
+    return str(record["api_key"]), provider
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("index.html", {"request": request})
@@ -142,6 +185,39 @@ def get_state() -> dict:
         "llm_gemini_model": llm.default_gemini_model,
         "pdf_available": OUTPUT_PDF.exists(),
     }
+
+
+@app.get("/api/session/status")
+def session_status(request: Request) -> dict:
+    sid = request.cookies.get(SESSION_COOKIE_NAME)
+    if not sid:
+        return {"has_key": False}
+    record = session_keys.get(sid)
+    if not record:
+        return {"has_key": False}
+    return {"has_key": True, "provider": record["provider"]}
+
+
+@app.post("/api/session/key")
+def set_session_key(payload: SessionKeyRequest, request: Request, response: Response) -> dict:
+    sid = _get_or_create_session_id(request)
+    session_keys.set(
+        session_id=sid,
+        provider=(payload.llm_provider or "openai").lower(),
+        api_key=payload.api_key.strip(),
+        ttl_seconds=SESSION_TTL_HOURS * 3600,
+    )
+    _set_session_cookie(response, sid)
+    return {"ok": True}
+
+
+@app.post("/api/session/key/clear")
+def clear_session_key(request: Request, response: Response) -> dict:
+    sid = request.cookies.get(SESSION_COOKIE_NAME)
+    if sid:
+        session_keys.clear(sid)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return {"ok": True}
 
 
 @app.get("/api/instructions")
@@ -192,12 +268,12 @@ def update_resume(payload: ResumeUpdate) -> dict:
 
 
 @app.post("/api/tailor")
-def tailor_resume(payload: TailorRequest) -> dict:
+def tailor_resume(payload: TailorRequest, request: Request) -> dict:
     # Kept for compatibility with existing clients.
-    return _run_tailor_sync(payload)
+    return _run_tailor_sync(payload, request)
 
 
-def _run_tailor_sync(payload: TailorRequest) -> dict:
+def _run_tailor_sync(payload: TailorRequest, request: Request) -> dict:
     resume = _load_initial_resume()
     if not resume.strip():
         raise HTTPException(status_code=400, detail="No resume in cache.")
@@ -205,13 +281,14 @@ def _run_tailor_sync(payload: TailorRequest) -> dict:
     instructions_path = _load_instructions_path()
     prompts = build_prompt_bundle(instructions_path)
     orchestrator = ResumeOrchestrator(llm=llm, prompts=prompts)
+    api_key, provider = _resolve_request_key_and_provider(request, payload)
 
     try:
         result = orchestrator.tailor(
             current_resume=resume,
             job_description=payload.job_description,
-            api_key=payload.api_key,
-            llm_provider=payload.llm_provider,
+            api_key=api_key,
+            llm_provider=provider,
             llm_model=payload.llm_model,
         )
     except Exception as exc:
@@ -226,7 +303,7 @@ def _run_tailor_sync(payload: TailorRequest) -> dict:
 
 
 @app.post("/api/tailor/start")
-def start_tailor_job(payload: TailorRequest) -> dict:
+def start_tailor_job(payload: TailorRequest, request: Request) -> dict:
     resume = _load_initial_resume()
     if not resume.strip():
         raise HTTPException(status_code=400, detail="No resume in cache.")
@@ -244,6 +321,7 @@ def start_tailor_job(payload: TailorRequest) -> dict:
     instructions_path = _load_instructions_path()
     prompts = build_prompt_bundle(instructions_path)
     orchestrator = ResumeOrchestrator(llm=llm, prompts=prompts)
+    api_key, provider = _resolve_request_key_and_provider(request, payload)
 
     def worker() -> None:
         try:
@@ -261,8 +339,8 @@ def start_tailor_job(payload: TailorRequest) -> dict:
             result = orchestrator.tailor(
                 current_resume=resume,
                 job_description=payload.job_description,
-                api_key=payload.api_key,
-                llm_provider=payload.llm_provider,
+                api_key=api_key,
+                llm_provider=provider,
                 llm_model=payload.llm_model,
                 progress_cb=on_progress,
             )

@@ -8,6 +8,7 @@ Resume Tailor Studio is a web app that tailors a LaTeX resume to a pasted job de
 - Lets you paste a JD and run dynamic agent workflow steps
 - Lets you edit global rules and workflow steps in-app
 - Supports request-time OpenAI API key input (not persisted)
+- Supports secure server-side key sessions via HttpOnly cookie
 - Compiles LaTeX to PDF and shows in-app preview
 - Supports PDF download
 
@@ -100,6 +101,9 @@ Notes:
 - `DATA_DIR` (default: `./data`)
 - `DEFAULT_RESUME_PATH` (optional)
 - `DEFAULT_INSTRUCTIONS_PATH` (optional)
+- `SESSION_SECRET` (recommended in production)
+- `SESSION_TTL_HOURS` (default: `24`)
+- `COOKIE_SECURE` (set `true` behind HTTPS)
 
 ## API Endpoints
 
@@ -112,6 +116,9 @@ Notes:
 - `PUT /api/resume` save cached resume
 - `POST /api/tailor/start` start async tailor job
 - `GET /api/tailor/status/{job_id}` poll job status
+- `GET /api/session/status` check secure session key state
+- `POST /api/session/key` store API key in secure session
+- `POST /api/session/key/clear` clear secure session key
 - `POST /api/compile` compile current LaTeX to PDF
 - `GET /api/pdf/latest` inline preview PDF
 - `GET /api/pdf/download` download PDF

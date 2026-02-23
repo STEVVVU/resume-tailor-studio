@@ -38,8 +38,13 @@
             <select id="modelSelect"></select>
           </div>
           <div>
-            <label for="apiKeyInput">API Key (request-only, not persisted)</label>
+            <label for="apiKeyInput">API Key (stored server-side in secure session)</label>
             <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-... / AIza..." />
+            <div class="row compact">
+              <button id="saveKeyBtn" type="button">Save Key to Secure Session</button>
+              <button id="clearKeyBtn" type="button">Clear Session Key</button>
+            </div>
+            <p class="muted" id="sessionKeyMeta">Session key: not set</p>
           </div>
         </div>
         <label for="jdInput">Job Description</label>

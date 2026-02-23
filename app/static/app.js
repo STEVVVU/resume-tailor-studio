@@ -56,6 +56,20 @@ function setupTabs() {
   });
 }
 
+function setSessionKeyMeta(hasKey, provider = "") {
+  const el = document.getElementById("sessionKeyMeta");
+  if (!hasKey) {
+    el.textContent = "Session key: not set";
+    return;
+  }
+  el.textContent = `Session key: set (${provider || "provider unknown"})`;
+}
+
+async function loadSessionKeyStatus() {
+  const status = await api("/api/session/status", { method: "GET" });
+  setSessionKeyMeta(Boolean(status.has_key), status.provider || "");
+}
+
 function populateModelSelect(provider, selectedModel) {
   const modelSelect = document.getElementById("modelSelect");
   const options = MODEL_OPTIONS[provider] || [];
@@ -235,6 +249,7 @@ async function loadState() {
   }
 
   await loadInstructions();
+  await loadSessionKeyStatus();
 }
 
 async function saveResume() {
@@ -284,7 +299,6 @@ async function pollJobStatus() {
 
 async function tailorResume() {
   const jd = document.getElementById("jdInput").value.trim();
-  const apiKey = document.getElementById("apiKeyInput").value.trim();
   const llmProvider = document.getElementById("providerSelect").value;
   const llmModel = document.getElementById("modelSelect").value;
   if (!jd) {
@@ -300,12 +314,10 @@ async function tailorResume() {
     method: "POST",
     body: JSON.stringify({
       job_description: jd,
-      api_key: apiKey || null,
       llm_provider: llmProvider,
       llm_model: llmModel || null,
     }),
   });
-  document.getElementById("apiKeyInput").value = "";
 
   activeJobId = start.job_id;
   await pollJobStatus();
@@ -339,6 +351,30 @@ function addWorkflowStep() {
   renderWorkflowSteps();
 }
 
+async function saveSessionKey() {
+  const apiKey = document.getElementById("apiKeyInput").value.trim();
+  const llmProvider = document.getElementById("providerSelect").value;
+  if (!apiKey) {
+    setStatus("Enter an API key first.");
+    return;
+  }
+
+  await api("/api/session/key", {
+    method: "POST",
+    body: JSON.stringify({ api_key: apiKey, llm_provider: llmProvider }),
+  });
+  document.getElementById("apiKeyInput").value = "";
+  await loadSessionKeyStatus();
+  setStatus("API key saved in secure session.");
+}
+
+async function clearSessionKey() {
+  await api("/api/session/key/clear", { method: "POST" });
+  document.getElementById("apiKeyInput").value = "";
+  setSessionKeyMeta(false);
+  setStatus("Session key cleared.");
+}
+
 function bindEvents() {
   document.getElementById("saveResumeBtn").addEventListener("click", saveResume);
   document.getElementById("tailorBtn").addEventListener("click", tailorResume);
@@ -352,6 +388,12 @@ function bindEvents() {
   });
   document.getElementById("addStepBtn").addEventListener("click", addWorkflowStep);
   document.getElementById("syncStepsBtn").addEventListener("click", syncStepsToInstructionsText);
+  document.getElementById("saveKeyBtn").addEventListener("click", () => {
+    saveSessionKey().catch((err) => setStatus(err.message));
+  });
+  document.getElementById("clearKeyBtn").addEventListener("click", () => {
+    clearSessionKey().catch((err) => setStatus(err.message));
+  });
   document.getElementById("providerSelect").addEventListener("change", (e) => {
     populateModelSelect(e.target.value);
   });
