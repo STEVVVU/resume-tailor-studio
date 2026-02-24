@@ -104,12 +104,50 @@
 
         <div class="card">
           <div class="row between workflow-header">
-            <label>Workflow Steps (Dynamic Agents)</label>
-            <button id="addStepBtn">Add Step</button>
+            <label>Structured Rules Builder</label>
+            <div class="row compact">
+              <button id="loadBuilderBtn">Load From Text</button>
+              <button id="applyBuilderBtn" class="primary">Apply Builder</button>
+            </div>
           </div>
-          <div id="stepsList" class="steps-list"></div>
-          <div class="row compact workflow-footer">
-            <button id="syncStepsBtn">Apply Steps to Rules Text</button>
+          <div class="builder-subtabs" aria-label="Builder sections">
+            <button class="builder-subtab active" data-builder-tab="builderHardLocks">Hard Locks</button>
+            <button class="builder-subtab" data-builder-tab="builderModules">Modules</button>
+            <button class="builder-subtab" data-builder-tab="builderRoles">Roles</button>
+            <button class="builder-subtab" data-builder-tab="builderWorkflow">Workflow</button>
+          </div>
+          <div id="builderHardLocks" class="builder-panel active">
+            <div class="builder-group">
+              <label for="hardLocksInput">Hard Locks (one per line)</label>
+              <textarea id="hardLocksInput" class="builder-area" spellcheck="false"></textarea>
+            </div>
+          </div>
+          <div id="builderModules" class="builder-panel">
+            <div class="builder-group">
+              <div class="row between top-gap">
+                <label>Modules</label>
+                <button id="addModuleBtn">Add Module</button>
+              </div>
+              <div id="moduleItems" class="builder-list"></div>
+            </div>
+          </div>
+          <div id="builderRoles" class="builder-panel">
+            <div class="builder-group">
+              <div class="row between top-gap">
+                <label>Roles</label>
+                <button id="addRoleBtn">Add Role</button>
+              </div>
+              <div id="roleItems" class="builder-list"></div>
+            </div>
+          </div>
+          <div id="builderWorkflow" class="builder-panel">
+            <div class="builder-group">
+              <div class="row between top-gap">
+                <label>Workflow</label>
+                <button id="addWorkflowBtn">Add Workflow Step</button>
+              </div>
+              <div id="workflowItems" class="builder-list"></div>
+            </div>
           </div>
         </div>
       </div>

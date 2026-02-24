@@ -1,16 +1,23 @@
-let activeJobId = null;
+﻿let activeJobId = null;
 let pollTimer = null;
-let workflowSteps = [];
 let tailorJobRunning = false;
 let compileRunning = false;
+
 const LOCAL_KEYS = {
   resume: "rts_resume_latex",
   instructions: "rts_instructions_text",
-  workflow: "rts_workflow_steps",
 };
+
 const MODEL_OPTIONS = {
   openai: ["gpt-5", "gpt-5-mini", "gpt-5.2"],
   gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
+};
+
+let builderState = {
+  hardLocks: [],
+  modules: [],
+  roles: [],
+  workflow: [],
 };
 
 function readLocal(key, fallback = "") {
@@ -26,7 +33,7 @@ function writeLocal(key, value) {
   try {
     localStorage.setItem(key, value);
   } catch (_err) {
-    // Ignore storage failures (private mode/quota).
+    // Ignore storage failures.
   }
 }
 
@@ -35,17 +42,6 @@ function removeLocal(key) {
     localStorage.removeItem(key);
   } catch (_err) {
     // Ignore storage failures.
-  }
-}
-
-function readLocalWorkflow() {
-  const raw = readLocal(LOCAL_KEYS.workflow, "");
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (_err) {
-    return [];
   }
 }
 
@@ -99,6 +95,23 @@ function setupTabs() {
   });
 }
 
+function setupBuilderTabs() {
+  const tabs = document.querySelectorAll(".builder-subtab");
+  const panels = document.querySelectorAll(".builder-panel");
+  if (!tabs.length || !panels.length) return;
+
+  tabs.forEach((tabBtn) => {
+    tabBtn.addEventListener("click", () => {
+      const target = tabBtn.dataset.builderTab;
+      tabs.forEach((t) => t.classList.remove("active"));
+      panels.forEach((p) => p.classList.remove("active"));
+      tabBtn.classList.add("active");
+      const panel = document.getElementById(target);
+      if (panel) panel.classList.add("active");
+    });
+  });
+}
+
 function setTailorRunning(running) {
   tailorJobRunning = Boolean(running);
   const btn = document.getElementById("tailorBtn");
@@ -147,118 +160,305 @@ async function refreshModelsForProvider(provider, selectedModel = "") {
       MODEL_OPTIONS[provider] = payload.models;
     }
   } catch (_err) {
-    // Keep fallback list when discovery fails or no provider key is available.
+    // Keep fallback list when discovery fails.
   }
   populateModelSelect(provider, selectedModel);
 }
 
 function parseWorkflowStepsFromText(content) {
   const match = content.match(/Workflow \(when user provides JD \+ LaTeX\)([\s\S]*)$/m);
-  if (!match) {
-    return [];
-  }
-
+  if (!match) return [];
   const lines = match[1].split("\n");
-  const steps = [];
-  for (const line of lines) {
-    const stepMatch = line.match(/^\s*\d+\)\s*(.+)\s*$/);
-    if (stepMatch) {
-      steps.push(stepMatch[1]);
-    }
-  }
-  return steps;
+  return lines
+    .map((line) => line.match(/^\s*\d+\)\s*(.+)\s*$/))
+    .filter(Boolean)
+    .map((m) => m[1]);
 }
 
-function replaceWorkflowSection(content, steps) {
-  const header = "Workflow (when user provides JD + LaTeX)";
-  const stepText = steps.map((s, i) => `${i + 1}) ${s}`).join("\n");
-  const newSection = `${header}\n${stepText}`;
-
-  const workflowRegex = /Workflow \(when user provides JD \+ LaTeX\)[\s\S]*$/m;
-  if (workflowRegex.test(content)) {
-    return content.replace(workflowRegex, newSection);
+function extractStructuredConfigFromText(content) {
+  const match = content.match(/```json\s*([\s\S]*?)\s*```/i);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_err) {
+    return null;
   }
-  const spacer = content.endsWith("\n") ? "\n" : "\n\n";
-  return `${content}${spacer}${newSection}`;
 }
 
-function renderWorkflowSteps() {
-  const root = document.getElementById("stepsList");
-  root.innerHTML = "";
+function normalizeBuilderFromConfig(config) {
+  const modules = Object.entries(config.modules || {}).map(([key, value]) => ({
+    key,
+    rulesText: Array.isArray(value) ? value.join("\n") : String(value || ""),
+  }));
 
-  workflowSteps.forEach((step, idx) => {
-    const item = document.createElement("div");
-    item.className = "step-item";
+  const roles = Object.entries(config.roles || {}).map(([key, value]) => ({
+    key,
+    name: String(value.name || ""),
+    mode: String(value.mode || "json").toLowerCase() === "latex" ? "latex" : "json",
+    modulesText: Array.isArray(value.modules) ? value.modules.join(", ") : "",
+    instruction: String(value.instruction || ""),
+  }));
 
-    const header = document.createElement("div");
-    header.className = "step-header";
-    header.innerHTML = `<span>Step ${idx + 1}</span>`;
+  const workflow = Array.isArray(config.workflow)
+    ? config.workflow.map((w) => ({ step: String(w.step || ""), role: String(w.role || "") }))
+    : [];
 
-    const actions = document.createElement("div");
-    actions.className = "step-actions";
+  const hardLocks = Array.isArray(config.global_hard_locks) ? config.global_hard_locks.map(String) : [];
+  return { hardLocks, modules, roles, workflow };
+}
 
-    const upBtn = document.createElement("button");
-    upBtn.textContent = "↑";
-    upBtn.title = "Move step up";
-    upBtn.setAttribute("aria-label", "Move step up");
-    upBtn.disabled = idx === 0;
-    upBtn.addEventListener("click", () => {
-      if (idx === 0) return;
-      [workflowSteps[idx - 1], workflowSteps[idx]] = [workflowSteps[idx], workflowSteps[idx - 1]];
-      renderWorkflowSteps();
+function makeDefaultBuilderFromLegacyText(content) {
+  const legacySteps = parseWorkflowStepsFromText(content || "");
+  return {
+    hardLocks: [],
+    modules: [],
+    roles: [],
+    workflow: legacySteps.map((step) => ({ step, role: "" })),
+  };
+}
+
+function builderToStructuredConfig() {
+  const moduleMap = {};
+  builderState.modules.forEach((m) => {
+    const key = (m.key || "").trim();
+    if (!key) return;
+    moduleMap[key] = (m.rulesText || "")
+      .split("\n")
+      .map((x) => x.trim())
+      .filter((x) => x.length > 0);
+  });
+
+  const roleMap = {};
+  builderState.roles.forEach((r) => {
+    const key = (r.key || "").trim();
+    if (!key) return;
+    roleMap[key] = {
+      name: (r.name || "").trim() || key,
+      mode: r.mode === "latex" ? "latex" : "json",
+      modules: (r.modulesText || "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0),
+      instruction: (r.instruction || "").trim(),
+    };
+  });
+
+  const workflow = builderState.workflow
+    .map((w) => ({ step: (w.step || "").trim(), role: (w.role || "").trim() }))
+    .filter((w) => w.step.length > 0);
+
+  return {
+    version: 1,
+    global_hard_locks: builderState.hardLocks.map((x) => x.trim()).filter((x) => x.length > 0),
+    modules: moduleMap,
+    roles: roleMap,
+    workflow,
+  };
+}
+
+function structuredConfigToText(config) {
+  return `Resume Tailor GPT - Structured Instructions\n\n\`\`\`json\n${JSON.stringify(config, null, 2)}\n\`\`\`\n\nHuman note:\n- This file is structured for role-based orchestration.\n- Keep JSON valid to ensure parser compatibility.\n`;
+}
+
+function renderBuilder() {
+  const hardLocksInput = document.getElementById("hardLocksInput");
+  hardLocksInput.value = (builderState.hardLocks || []).join("\n");
+
+  const moduleRoot = document.getElementById("moduleItems");
+  moduleRoot.innerHTML = "";
+  builderState.modules.forEach((m, idx) => {
+    const wrap = document.createElement("div");
+    wrap.className = "builder-item";
+
+    const keyLabel = document.createElement("label");
+    keyLabel.textContent = "Module Key";
+    const keyInput = document.createElement("input");
+    keyInput.type = "text";
+    keyInput.value = m.key || "";
+
+    const rulesLabel = document.createElement("label");
+    rulesLabel.textContent = "Rules (one per line)";
+    const rulesArea = document.createElement("textarea");
+    rulesArea.className = "builder-area";
+    rulesArea.value = m.rulesText || "";
+
+    const row = document.createElement("div");
+    row.className = "row compact";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "Delete Module";
+    row.appendChild(del);
+
+    keyInput.addEventListener("input", (e) => {
+      builderState.modules[idx].key = e.target.value;
+    });
+    rulesArea.addEventListener("input", (e) => {
+      builderState.modules[idx].rulesText = e.target.value;
+    });
+    del.addEventListener("click", () => {
+      builderState.modules.splice(idx, 1);
+      renderBuilder();
     });
 
-    const downBtn = document.createElement("button");
-    downBtn.textContent = "↓";
-    downBtn.title = "Move step down";
-    downBtn.setAttribute("aria-label", "Move step down");
-    downBtn.disabled = idx === workflowSteps.length - 1;
-    downBtn.addEventListener("click", () => {
-      if (idx === workflowSteps.length - 1) return;
-      [workflowSteps[idx + 1], workflowSteps[idx]] = [workflowSteps[idx], workflowSteps[idx + 1]];
-      renderWorkflowSteps();
+    wrap.appendChild(keyLabel);
+    wrap.appendChild(keyInput);
+    wrap.appendChild(rulesLabel);
+    wrap.appendChild(rulesArea);
+    wrap.appendChild(row);
+    moduleRoot.appendChild(wrap);
+  });
+
+  const roleRoot = document.getElementById("roleItems");
+  roleRoot.innerHTML = "";
+  builderState.roles.forEach((r, idx) => {
+    const wrap = document.createElement("div");
+    wrap.className = "builder-item";
+
+    const rkLabel = document.createElement("label");
+    rkLabel.textContent = "Role Key";
+    const rk = document.createElement("input");
+    rk.type = "text";
+    rk.value = r.key || "";
+
+    const rnLabel = document.createElement("label");
+    rnLabel.textContent = "Role Name";
+    const rn = document.createElement("input");
+    rn.type = "text";
+    rn.value = r.name || "";
+
+    const rmLabel = document.createElement("label");
+    rmLabel.textContent = "Mode";
+    const rm = document.createElement("select");
+    ["json", "latex"].forEach((mode) => {
+      const opt = document.createElement("option");
+      opt.value = mode;
+      opt.textContent = mode;
+      rm.appendChild(opt);
+    });
+    rm.value = r.mode === "latex" ? "latex" : "json";
+
+    const modsLabel = document.createElement("label");
+    modsLabel.textContent = "Modules (comma-separated keys)";
+    const mods = document.createElement("input");
+    mods.type = "text";
+    mods.value = r.modulesText || "";
+
+    const instrLabel = document.createElement("label");
+    instrLabel.textContent = "Instruction";
+    const instr = document.createElement("textarea");
+    instr.className = "builder-area";
+    instr.value = r.instruction || "";
+
+    const row = document.createElement("div");
+    row.className = "row compact";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "Delete Role";
+    row.appendChild(del);
+
+    rk.addEventListener("input", (e) => { builderState.roles[idx].key = e.target.value; });
+    rn.addEventListener("input", (e) => { builderState.roles[idx].name = e.target.value; });
+    rm.addEventListener("change", (e) => { builderState.roles[idx].mode = e.target.value; });
+    mods.addEventListener("input", (e) => { builderState.roles[idx].modulesText = e.target.value; });
+    instr.addEventListener("input", (e) => { builderState.roles[idx].instruction = e.target.value; });
+    del.addEventListener("click", () => {
+      builderState.roles.splice(idx, 1);
+      renderBuilder();
     });
 
-    const delBtn = document.createElement("button");
-    delBtn.textContent = "×";
-    delBtn.title = "Delete step";
-    delBtn.setAttribute("aria-label", "Delete step");
-    delBtn.addEventListener("click", () => {
-      workflowSteps.splice(idx, 1);
-      renderWorkflowSteps();
+    wrap.appendChild(rkLabel);
+    wrap.appendChild(rk);
+    wrap.appendChild(rnLabel);
+    wrap.appendChild(rn);
+    wrap.appendChild(rmLabel);
+    wrap.appendChild(rm);
+    wrap.appendChild(modsLabel);
+    wrap.appendChild(mods);
+    wrap.appendChild(instrLabel);
+    wrap.appendChild(instr);
+    wrap.appendChild(row);
+    roleRoot.appendChild(wrap);
+  });
+
+  const workflowRoot = document.getElementById("workflowItems");
+  workflowRoot.innerHTML = "";
+  const roleKeys = builderState.roles.map((r) => (r.key || "").trim()).filter((k) => k.length > 0);
+  builderState.workflow.forEach((w, idx) => {
+    const wrap = document.createElement("div");
+    wrap.className = "builder-item";
+
+    const stepLabel = document.createElement("label");
+    stepLabel.textContent = "Step";
+    const stepInput = document.createElement("input");
+    stepInput.type = "text";
+    stepInput.value = w.step || "";
+
+    const roleLabel = document.createElement("label");
+    roleLabel.textContent = "Role";
+    const roleSelect = document.createElement("select");
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = "(select role)";
+    roleSelect.appendChild(empty);
+    roleKeys.forEach((key) => {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = key;
+      roleSelect.appendChild(opt);
+    });
+    roleSelect.value = w.role || "";
+
+    const row = document.createElement("div");
+    row.className = "row compact";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "Delete Step";
+    row.appendChild(del);
+
+    stepInput.addEventListener("input", (e) => { builderState.workflow[idx].step = e.target.value; });
+    roleSelect.addEventListener("change", (e) => { builderState.workflow[idx].role = e.target.value; });
+    del.addEventListener("click", () => {
+      builderState.workflow.splice(idx, 1);
+      renderBuilder();
     });
 
-    actions.appendChild(upBtn);
-    actions.appendChild(downBtn);
-    actions.appendChild(delBtn);
-
-    header.appendChild(actions);
-
-    const input = document.createElement("input");
-    input.className = "step-input";
-    input.value = step;
-    input.addEventListener("input", (e) => {
-      workflowSteps[idx] = e.target.value;
-    });
-
-    item.appendChild(header);
-    item.appendChild(input);
-    root.appendChild(item);
+    wrap.appendChild(stepLabel);
+    wrap.appendChild(stepInput);
+    wrap.appendChild(roleLabel);
+    wrap.appendChild(roleSelect);
+    wrap.appendChild(row);
+    workflowRoot.appendChild(wrap);
   });
 }
 
-function syncStepsToInstructionsText() {
-  const textarea = document.getElementById("instructionsInput");
-  const safeSteps = workflowSteps.map((s) => s.trim()).filter((s) => s.length > 0);
-  if (safeSteps.length === 0) {
-    setStatus("Add at least one workflow step before syncing.");
+function loadBuilderFromRulesText() {
+  const content = document.getElementById("instructionsInput").value || "";
+  const structured = extractStructuredConfigFromText(content);
+  builderState = structured ? normalizeBuilderFromConfig(structured) : makeDefaultBuilderFromLegacyText(content);
+  renderBuilder();
+  setStatus(structured ? "Loaded builder from structured rules." : "No structured JSON found; loaded legacy workflow steps.");
+}
+
+function applyBuilderToRulesText() {
+  builderState.hardLocks = (document.getElementById("hardLocksInput").value || "")
+    .split("\n")
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+
+  const config = builderToStructuredConfig();
+  const roleKeys = new Set(Object.keys(config.roles || {}));
+  const invalid = (config.workflow || []).find((w) => w.role && !roleKeys.has(w.role));
+  if (invalid) {
+    setStatus(`Workflow role "${invalid.role}" is not defined in Roles.`);
     return false;
   }
 
-  textarea.value = replaceWorkflowSection(textarea.value, safeSteps);
-  workflowSteps = safeSteps;
-  renderWorkflowSteps();
-  setStatus("Workflow steps synced into rules text.");
+  const text = structuredConfigToText(config);
+  document.getElementById("instructionsInput").value = text;
+  writeLocal(LOCAL_KEYS.instructions, text);
+  renderBuilder();
+  setStatus("Applied builder into structured rules text.");
   return true;
 }
 
@@ -268,19 +468,10 @@ async function loadInstructions() {
   const activeInstructions = localInstructions || payload.content || "";
   document.getElementById("instructionsInput").value = activeInstructions;
   document.getElementById("instructionsMeta").textContent = `Source: ${payload.source} | Path: ${payload.path}`;
-
-  const localWorkflow = readLocalWorkflow();
-  workflowSteps = Array.isArray(localWorkflow) && localWorkflow.length
-    ? localWorkflow
-    : (payload.workflow_steps && payload.workflow_steps.length
-      ? payload.workflow_steps.slice()
-      : parseWorkflowStepsFromText(activeInstructions));
-
-  renderWorkflowSteps();
+  loadBuilderFromRulesText();
 }
 
 async function saveInstructions() {
-  syncStepsToInstructionsText();
   const content = document.getElementById("instructionsInput").value;
   const payload = await api("/api/instructions", {
     method: "PUT",
@@ -288,10 +479,8 @@ async function saveInstructions() {
   });
 
   document.getElementById("instructionsMeta").textContent = `Source: ${payload.source} | Path: ${payload.path}`;
-  workflowSteps = payload.workflow_steps || workflowSteps;
   writeLocal(LOCAL_KEYS.instructions, content);
-  writeLocal(LOCAL_KEYS.workflow, JSON.stringify(workflowSteps));
-  renderWorkflowSteps();
+  loadBuilderFromRulesText();
   setStatus("Custom rules saved.");
   setSourcePill(`Instructions source: ${payload.source}`);
 }
@@ -300,10 +489,8 @@ async function resetInstructions() {
   const payload = await api("/api/instructions/reset", { method: "POST" });
   document.getElementById("instructionsInput").value = payload.content || "";
   document.getElementById("instructionsMeta").textContent = `Source: ${payload.source} | Path: ${payload.path}`;
-  workflowSteps = payload.workflow_steps || [];
   removeLocal(LOCAL_KEYS.instructions);
-  removeLocal(LOCAL_KEYS.workflow);
-  renderWorkflowSteps();
+  loadBuilderFromRulesText();
   setStatus("Reset to default rules file.");
   setSourcePill("Instructions source: default");
 }
@@ -319,9 +506,7 @@ async function loadState() {
   const selectedModel = provider === "gemini" ? (state.llm_gemini_model || "gemini-2.5-flash") : (state.llm_model || "gpt-5");
   await refreshModelsForProvider(provider, selectedModel);
 
-  setStatus(
-    `LLM: ${state.llm_enabled ? "enabled" : "disabled"} | PDF: ${state.pdf_available ? "available" : "not compiled"}`
-  );
+  setStatus(`LLM: ${state.llm_enabled ? "enabled" : "disabled"} | PDF: ${state.pdf_available ? "available" : "not compiled"}`);
   setSourcePill(`Instructions source: ${state.instructions_source} | ${state.instructions_path}`);
 
   if (state.pdf_available) {
@@ -351,10 +536,7 @@ function stopPolling() {
 }
 
 async function pollJobStatus() {
-  if (!activeJobId) {
-    return;
-  }
-
+  if (!activeJobId) return;
   const job = await api(`/api/tailor/status/${activeJobId}`, { method: "GET" });
   setProgress(job.progress, job.stage);
   setStatus(`Tailor job ${job.status}: ${job.stage}`);
@@ -453,11 +635,6 @@ async function compilePdf() {
   }
 }
 
-function addWorkflowStep() {
-  workflowSteps.push("New step: describe purpose and output.");
-  renderWorkflowSteps();
-}
-
 async function saveSessionKey() {
   const apiKey = document.getElementById("apiKeyInput").value.trim();
   const llmProvider = document.getElementById("providerSelect").value;
@@ -496,8 +673,21 @@ function bindEvents() {
   document.getElementById("resetInstructionsBtn").addEventListener("click", () => {
     resetInstructions().catch((err) => setStatus(err.message));
   });
-  document.getElementById("addStepBtn").addEventListener("click", addWorkflowStep);
-  document.getElementById("syncStepsBtn").addEventListener("click", syncStepsToInstructionsText);
+  document.getElementById("loadBuilderBtn").addEventListener("click", loadBuilderFromRulesText);
+  document.getElementById("applyBuilderBtn").addEventListener("click", applyBuilderToRulesText);
+  document.getElementById("addModuleBtn").addEventListener("click", () => {
+    builderState.modules.push({ key: "", rulesText: "" });
+    renderBuilder();
+  });
+  document.getElementById("addRoleBtn").addEventListener("click", () => {
+    builderState.roles.push({ key: "", name: "", mode: "json", modulesText: "", instruction: "" });
+    renderBuilder();
+  });
+  document.getElementById("addWorkflowBtn").addEventListener("click", () => {
+    builderState.workflow.push({ step: "", role: "" });
+    renderBuilder();
+  });
+
   document.getElementById("saveKeyBtn").addEventListener("click", () => {
     saveSessionKey().catch((err) => setStatus(err.message));
   });
@@ -516,5 +706,6 @@ function bindEvents() {
 }
 
 setupTabs();
+setupBuilderTabs();
 bindEvents();
 loadState().catch((err) => setStatus(err.message));

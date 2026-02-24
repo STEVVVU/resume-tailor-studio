@@ -70,7 +70,7 @@ body::after {
 
 .app-shell {
   position: relative;
-  max-width: 1380px;
+  max-width: 1680px;
   margin: 0 auto;
   padding: 24px;
 }
@@ -257,14 +257,6 @@ select:focus {
 #resumeInput,
 #instructionsInput {
   min-height: 380px;
-}
-
-#stepsList {
-  min-height: 380px;
-  max-height: 380px;
-  overflow: auto;
-  padding: 8px 4px 8px 0;
-  margin-top: 4px;
 }
 
 .row {
@@ -455,6 +447,139 @@ button#resetInstructionsBtn {
   border-top: 1px solid #d8ccb6;
 }
 
+.builder-group {
+  margin-top: 10px;
+}
+
+.builder-group > .row.between {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  padding-right: 2px;
+}
+
+.builder-subtabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 10px;
+}
+
+.builder-subtab {
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.builder-subtab.active {
+  border-color: #b99962;
+  background: linear-gradient(180deg, #f2e7bf, #e7d796);
+  color: #1f1a14;
+}
+
+.builder-panel {
+  display: none;
+}
+
+.builder-panel.active {
+  display: block;
+}
+
+.builder-area {
+  min-height: 96px;
+}
+
+.builder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 4px 2px 2px;
+}
+
+.builder-item {
+  border: 1px solid #d0c2ac;
+  border-radius: 10px;
+  background: rgba(255, 252, 246, 0.92);
+  padding: 10px;
+}
+
+.builder-item .row {
+  margin-top: 10px;
+}
+
+.builder-item label {
+  margin-top: 10px;
+  margin-bottom: 6px;
+}
+
+.builder-item label:first-child {
+  margin-top: 0;
+}
+
+.builder-item textarea,
+.builder-item input,
+.builder-item select {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.builder-item button {
+  margin-top: 2px;
+}
+
+@media (min-width: 1100px) {
+  #resumeTab .card {
+    min-height: calc(100vh - 210px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  #resumeTab #resumeInput {
+    min-height: 0;
+    flex: 1;
+  }
+
+  #rulesTab .grid-two {
+    align-items: stretch;
+  }
+
+  #rulesTab .card {
+    min-height: calc(100vh - 210px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  #rulesTab #instructionsInput {
+    min-height: 0;
+    flex: 1;
+  }
+
+  #rulesTab .builder-panel.active {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  #rulesTab .builder-group {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  #rulesTab .builder-area {
+    min-height: 0;
+    flex: 1;
+  }
+
+  #rulesTab .builder-list {
+    max-height: none;
+    flex: 1;
+  }
+}
+
 @media (max-width: 1024px) {
   h1 {
     font-size: 34px;
@@ -472,9 +597,19 @@ button#resetInstructionsBtn {
   #analysisOutput,
   #latexOutput,
   #resumeInput,
-  #instructionsInput,
-  #stepsList {
+  #instructionsInput {
     min-height: 260px;
+  }
+
+  .builder-list {
     max-height: none;
+  }
+
+  #rulesTab .card {
+    min-height: auto;
+  }
+
+  #resumeTab .card {
+    min-height: auto;
   }
 }

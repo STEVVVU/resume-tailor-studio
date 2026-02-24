@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,83 @@ def _extract_workflow_steps(text: str) -> list[str]:
         if match:
             steps.append(match.group(1))
     return steps
+
+
+def _extract_structured_json(text: str) -> dict | None:
+    match = re.search(r"```json\s*([\s\S]*?)\s*```", text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        payload = json.loads(match.group(1))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _join_lines(value: object) -> str:
+    if isinstance(value, list):
+        return "\n".join(str(v) for v in value)
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _build_from_structured_config(config: dict) -> PromptBundle | None:
+    modules = config.get("modules")
+    roles = config.get("roles")
+    workflow = config.get("workflow")
+    hard_locks = config.get("global_hard_locks", [])
+    if not isinstance(modules, dict) or not isinstance(roles, dict) or not isinstance(workflow, list):
+        return None
+
+    hard_lock_text = _join_lines(hard_locks).strip()
+    global_rules = f"HARD LOCKS (NON-NEGOTIABLE):\n{hard_lock_text}" if hard_lock_text else ""
+
+    agents: list[WorkflowAgent] = []
+    for idx, step in enumerate(workflow, start=1):
+        if not isinstance(step, dict):
+            continue
+        role_id = str(step.get("role", "")).strip()
+        step_text = str(step.get("step", role_id or f"Step {idx}")).strip()
+        role_cfg = roles.get(role_id)
+        if not isinstance(role_cfg, dict):
+            continue
+
+        mode_raw = str(role_cfg.get("mode", "json")).strip().lower()
+        mode: Literal["json", "latex"] = "latex" if mode_raw == "latex" else "json"
+        role_name = str(role_cfg.get("name", role_id or f"Role {idx}")).strip() or f"Role {idx}"
+        role_instruction = str(role_cfg.get("instruction", "")).strip()
+        module_ids = role_cfg.get("modules", [])
+        module_chunks: list[str] = []
+        if isinstance(module_ids, list):
+            for module_id in module_ids:
+                key = str(module_id).strip()
+                body = modules.get(key)
+                if body is None:
+                    continue
+                body_text = _join_lines(body).strip()
+                if body_text:
+                    module_chunks.append(f"[{key}]\n{body_text}")
+
+        system_chunks = []
+        if module_chunks:
+            system_chunks.append("APPLICABLE RULE MODULES:\n" + "\n\n".join(module_chunks))
+        if role_instruction:
+            system_chunks.append("ROLE INSTRUCTION:\n" + role_instruction)
+        system_prompt = "\n\n".join(system_chunks).strip()
+
+        agents.append(
+            WorkflowAgent(
+                name=f"Agent {idx}: {role_name}",
+                step_text=step_text,
+                mode=mode,
+                system_prompt=system_prompt or "Execute assigned step using provided constraints.",
+            )
+        )
+
+    if not agents:
+        return None
+    return PromptBundle(global_rules=global_rules, workflow_agents=agents)
 
 
 def extract_workflow_steps_from_text(text: str) -> list[str]:
@@ -115,6 +193,12 @@ def _agent_from_step(idx: int, step_text: str) -> WorkflowAgent:
 def build_prompt_bundle(instructions_path: Path) -> PromptBundle:
     raw = _clean_text(instructions_path.read_text(encoding="utf-8", errors="ignore"))
     raw = re.sub(r"\r\n?", "\n", raw)
+
+    structured = _extract_structured_json(raw)
+    if structured:
+        parsed = _build_from_structured_config(structured)
+        if parsed:
+            return parsed
 
     objectives = _extract_section(raw, "Core Objectives", "Translation-First Policy")
     translation = _extract_section(raw, "Translation-First Policy", "Bullet Styling Rules")
