@@ -447,7 +447,6 @@ def _run_tailor_sync(payload: TailorRequest, request: Request) -> dict:
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Tailor request failed: {exc}") from exc
-    store.set("current_resume", result.latex)
 
     return {
         "latex": result.latex,
@@ -498,7 +497,6 @@ def start_tailor_job(payload: TailorRequest, request: Request) -> dict:
                 llm_model=payload.llm_model,
                 progress_cb=on_progress,
             )
-            store.set("current_resume", result.latex)
 
             existing = _get_job(job_id)
             if existing:
