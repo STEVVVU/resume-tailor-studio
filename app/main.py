@@ -173,15 +173,23 @@ def _resolve_request_key_and_provider(request: Request, payload: TailorRequest) 
 
 
 def _safe_pdf_filename(name: str | None = None) -> str:
-    if not name:
-        base = PDF_FILENAME
-    else:
-        base = re.sub(r"[^A-Za-z0-9_ -]+", "", name).strip().replace(" ", "_")
-        if not base:
-            base = PDF_FILENAME
-        if not base.lower().endswith("_resume"):
-            base = f"{base}_Resume"
-    return base if base.lower().endswith(".pdf") else f"{base}.pdf"
+    raw = (name or PDF_FILENAME or "").strip().strip("\"'")
+    raw = re.sub(r"\.pdf\s*$", "", raw, flags=re.IGNORECASE)
+
+    base = re.sub(r"[^A-Za-z0-9_ -]+", "", raw).strip().replace(" ", "_")
+    base = re.sub(r"_+", "_", base)
+    # Repair common extension artifacts from previously sanitized names (e.g., "Resumepdf").
+    base = re.sub(r"(?i)resumepdf$", "Resume", base)
+    base = re.sub(r"(?i)_pdf$", "", base)
+
+    if not base:
+        fallback = re.sub(r"\.pdf\s*$", "", PDF_FILENAME, flags=re.IGNORECASE)
+        base = re.sub(r"[^A-Za-z0-9_ -]+", "", fallback).strip().replace(" ", "_") or "Resume"
+
+    if not re.search(r"(?i)(?:_)?resume$", base):
+        base = f"{base}_Resume"
+
+    return f"{base}.pdf"
 
 
 def _extract_filename_metadata(latex: str) -> str | None:
