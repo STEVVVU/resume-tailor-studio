@@ -31,7 +31,7 @@ Resume Tailor GPT - Structured Instructions
       "Use one global bullet mode per resume: all one-line OR all two-line.",
       "One-line mode: 12-15 words per bullet.",
       "Two-line mode: 16-30 words per bullet and never spill into a third line.",
-      "Format preference: action + implementation + impact + metric.",
+      "Format preference: action/implementation + context + quantifiable or measurable result.",
       "Max 1-2 tools per bullet."
     ],
     "skills_rules": [

@@ -580,26 +580,32 @@ async function tailorResume() {
   setTailorRunning(true);
   setProgress(0, "Queued");
   setStatus("Starting tailor job...");
-
-  const start = await api("/api/tailor/start", {
-    method: "POST",
-    body: JSON.stringify({
-      job_description: jd,
-      llm_provider: llmProvider,
-      llm_model: llmModel || null,
-    }),
-  });
-
-  activeJobId = start.job_id;
-  await pollJobStatus();
-  pollTimer = setInterval(() => {
-    pollJobStatus().catch((err) => {
-      stopPolling();
-      activeJobId = null;
-      setTailorRunning(false);
-      setStatus(`Progress polling failed: ${err.message}`);
+  try {
+    const start = await api("/api/tailor/start", {
+      method: "POST",
+      body: JSON.stringify({
+        job_description: jd,
+        llm_provider: llmProvider,
+        llm_model: llmModel || null,
+      }),
     });
-  }, 1200);
+
+    activeJobId = start.job_id;
+    await pollJobStatus();
+    pollTimer = setInterval(() => {
+      pollJobStatus().catch((err) => {
+        stopPolling();
+        activeJobId = null;
+        setTailorRunning(false);
+        setStatus(`Progress polling failed: ${err.message}`);
+      });
+    }, 1200);
+  } catch (err) {
+    stopPolling();
+    activeJobId = null;
+    setTailorRunning(false);
+    setStatus(`Failed to start tailor job: ${err.message}`);
+  }
 }
 
 async function compilePdf() {
